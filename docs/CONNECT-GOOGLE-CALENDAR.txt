@@ -1,0 +1,74 @@
+HOW TO CONNECT GOOGLE CALENDAR TO KAIROS
+========================================
+
+You need a free Google "client ID" of your own (Part A, once, about 10 minutes).
+Then you sign in with it (Part B). Nothing is billed. Google sometimes renames
+buttons; if a name is slightly different, pick the closest match.
+
+Already did Part A before? Skip to Part B.
+
+
+PART A - MAKE YOUR CLIENT ID (ONCE)
+-----------------------------------
+
+1. Make a project
+   - Open https://console.cloud.google.com and sign in with your Gmail.
+   - Agree to the terms if asked.
+   - Top left: project picker (may say "Select a project") > New project.
+   - Name: Kairos. Press Create, then select the Kairos project.
+
+2. Turn on the Calendar API
+   - In the top search bar type: Google Calendar API. Open it, press Enable.
+
+3. Set up the sign-in screen
+   - Search: Google Auth Platform (older name: OAuth consent screen). Press Get started.
+   - App name: Kairos. Support email: your Gmail. Next.
+   - Audience: External. Next.
+   - Contact email: your Gmail. Next. Tick the agreement, Continue, Create.
+   - Left menu > Audience > Test users > Add users > type your Gmail > Save.
+     (Without this, Google says "Access blocked".)
+
+4. Make the client
+   - Left menu > Clients (older: Credentials > Create credentials > OAuth client ID).
+   - Create client. Application type: Desktop app (NOT Web application).
+     Name: Kairos desktop. Create.
+   - Copy the Client ID (ends with .apps.googleusercontent.com) and the
+     Client secret (starts with GOCSPX-). Press Download JSON too and keep it private.
+   - Second PC: use the same client ID. If you no longer have the secret, open the
+     client and press "Add secret" to get a new one.
+
+
+PART B - SIGN IN (ON EACH PC)
+-----------------------------
+
+1. In Kairos open Settings > Data & accounts > Google account.
+2. Paste the Client ID and Client secret. Press Save.
+3. Press "Sign in with Google" and sign in on Google's page.
+4. Tick "Sync Google Calendar automatically". Google asks again, for Calendar.
+5. If Google shows "Google hasn't verified this app": press Continue
+   (or Advanced > Go to Kairos). It is your own app, so this is expected.
+6. Tick the calendar permission box, then Continue / Allow.
+7. Close the browser tab and go back to Kairos.
+
+Your Google Calendar now shows in Kairos and syncs every 5 minutes. Kairos also makes
+a calendar called "Focus" in your Google account with your dated to-dos and deadlines.
+Turn either off in Settings > Google account.
+
+
+EVERY 7 DAYS: RECONNECT
+-----------------------
+If your Google app stays in "Testing" mode (Publish app on the Audience page avoids this), Google ends Calendar access after 7 days.
+When Kairos shows a Reconnect bar, press it and allow again. Your events stay visible
+meanwhile.
+
+
+IF SOMETHING GOES WRONG
+-----------------------
+- "Access blocked" on Google's page: add your Gmail as a test user (Part A, step 3).
+  Also check the Calendar API is enabled (step 2).
+- "Google did not accept the client ID or secret": copy both again, no spaces.
+- "Google rejected the return address": the client must be "Desktop app". Make a new one.
+- Google page stuck or closed: press Connect again (or Cancel on the Calendar page).
+- "Could not reach Google": check the internet, then Connect again.
+- To remove access: Settings > Google account > Sign out, or
+  https://myaccount.google.com/permissions

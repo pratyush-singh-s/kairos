@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "Kairos Blocker",
+  "version": "0.15.5",
+  "description": "Blocks distracting sites while you focus: a calm countdown, or a full block. Follows the Kairos app, the Kairos phone app, or its own focus timer. On YouTube, block Shorts, channels, tags or phrases.",
+  "minimum_chrome_version": "120",
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Kairos Blocker",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "webNavigation",
+    "alarms",
+    "notifications",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "http://127.0.0.1/*"
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "youtube.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "optional_host_permissions": [
+    "http://*/*"
+  ]
+}

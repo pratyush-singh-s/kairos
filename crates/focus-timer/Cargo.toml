@@ -1,0 +1,9 @@
+[package]
+name = "focus-timer"
+version = "0.12.0"
+description = "Focus timer state machine: focus and break phases, pause, skip, stop"
+edition = "2024"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

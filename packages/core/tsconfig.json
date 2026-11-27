@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // DOM for the WHATWG URL class, which both users of this package (app webview, Firefox) have.
+  "compilerOptions": { "lib": ["ES2022", "DOM"] },
+  "include": ["src"]
+}

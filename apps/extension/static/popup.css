@@ -1,0 +1,23 @@
+body {
+  margin: 0;
+  width: 300px;
+  font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+  background: #0f1218;
+  color: #e6e9ef;
+}
+main { padding: 14px 16px; }
+h1 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.version { color: #9aa3b2; font-weight: 400; font-size: 13px; }
+.state { margin: 0 0 10px; }
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #4b5563;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  margin-right: 4px;
+}
+ul { margin: 0; padding-left: 18px; color: #c4cad6; }
+li { margin: 2px 0; }

@@ -1,0 +1,62 @@
+[package]
+name = "focus-desktop"
+version = "0.22.10"
+description = "Focus desktop app"
+authors = ["Ps"]
+edition = "2024"
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin name (needed on Windows).
+name = "focus_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+window-vibrancy = "0.8"
+focus-timer = { path = "../../../crates/focus-timer" }
+focus-store = { path = "../../../crates/focus-store" }
+focus-sync = { path = "../../../crates/focus-sync" }
+ureq = "3"
+sha2 = "0.10"
+base64 = "0.22"
+getrandom = "0.3"
+chrono = "0.4"
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Media_Audio",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Security_Credentials",
+  "Win32_UI_Shell",
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_System_Threading",
+  "Win32_System_JobObjects",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Registry",
+  "Win32_System_SystemInformation",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Magnification",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

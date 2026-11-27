@@ -1,0 +1,15 @@
+[package]
+name = "focus-store"
+version = "0.13.0"
+description = "Local SQLite storage for Focus: schema, migrations, IDs and sync clock"
+edition = "2024"
+publish = false
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+uuid = { version = "1", features = ["v7"] }

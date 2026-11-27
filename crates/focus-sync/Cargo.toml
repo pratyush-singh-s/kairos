@@ -1,0 +1,15 @@
+[package]
+name = "focus-sync"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+focus-store = { path = "../focus-store" }
+getrandom = "0.3"
+if-addrs = "0.15.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+snow = "0.10.0"
+spake2 = "0.4.0"
+# Pairing by Google account talks to Firebase (account.rs).
+ureq = "3"

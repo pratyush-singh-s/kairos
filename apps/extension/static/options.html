@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Kairos Blocker settings</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="options">
+    <main>
+      <h1 class="page-title">Kairos Blocker</h1>
+      <p class="notice" id="managed" hidden>
+        <span id="managed-text">Your sites, YouTube choices and theme are set in the Kairos app, on its <strong>Blocking</strong> page (theme in
+        Settings). Change them there and every browser follows. YouTube tag groups can be changed here too. If Kairos is closed, the last lists keep working.</span>
+        <span id="managed-phone-text" hidden>Your sites, YouTube choices and theme come from your linked phone (they are the Kairos app's
+        lists from your laptop). Change them in the Kairos app, or unlink the phone to edit them here.</span>
+      </p>
+
+      <section class="panel" id="sites-panel" aria-labelledby="sites-title">
+        <h2 class="panel-title" id="sites-title"><span>blocked sites</span></h2>
+        <p class="muted small">
+          During a focus session these sites are blocked, including their subdomains (youtube.com also covers
+          m.youtube.com). <strong>Wait</strong> shows a countdown first, then lets you continue for the rest of the
+          session. <strong>Full block</strong> has no way through.
+        </p>
+        <form id="add-form" class="add-row">
+          <input id="new-site" type="text" placeholder="Add a site, e.g. youtube.com" aria-label="Site to block" autocomplete="off" spellcheck="false" />
+          <select id="new-mode" aria-label="How to block it">
+            <option value="wait">Wait, then continue</option>
+            <option value="block">Full block</option>
+          </select>
+          <span class="wait"><input id="new-wait" class="seconds" type="number" min="3" max="600" aria-label="Countdown in seconds" /> s</span>
+          <button type="submit" class="button primary">Add</button>
+        </form>
+        <p class="error small" id="add-error" role="alert"></p>
+        <div class="chips" id="suggestions" aria-label="Suggestions"></div>
+        <ul class="rules" id="rules"></ul>
+        <p class="muted" id="empty">No sites yet. Add one above or pick a suggestion.</p>
+      </section>
+
+      <section class="panel" id="yt-panel" aria-labelledby="yt-title">
+        <h2 class="panel-title" id="yt-title"><span>youtube</span></h2>
+        <p class="muted small">
+          Keep YouTube for what you need and block the rest while you focus. (If youtube.com is in your blocked sites
+          above, all of YouTube is blocked anyway.)
+        </p>
+        <p class="notice small" id="yt-permission" hidden>
+          To block channels, tags and phrases, Kairos Blocker needs to see which video is playing on YouTube. It only reads
+          the title, channel and tags, and nothing leaves your browser.
+          <button type="button" class="button primary" id="yt-allow">Allow on YouTube</button>
+          <span class="muted">
+            If nothing happens: open <code>about:addons</code> → Kairos Blocker → <strong>Permissions</strong>, and turn on
+            youtube.com. Then reload YouTube.
+          </span>
+        </p>
+        <label class="check"><input type="checkbox" id="yt-shorts" /> Block Shorts, and hide them from YouTube's pages</label>
+        <p class="muted small">While you focus, also hide:</p>
+        <label class="check"><input type="checkbox" id="yt-comments" /> Comments</label>
+        <label class="check"><input type="checkbox" id="yt-recommended" /> Suggested videos (the Up next column and end screens)</label>
+        <label class="check"><input type="checkbox" id="yt-home" /> The home page feed (search still works)</label>
+
+        <h3 class="sub-title">What to block</h3>
+        <p class="muted small">
+          Type <strong>@name</strong> for a channel (or paste a link to it), <strong>#name</strong> for a tag, or any
+          word or phrase to block videos with it in the title or tags.
+        </p>
+        <form id="yt-form" class="add-row">
+          <input id="yt-entry" type="text" placeholder="@channel, #tag or a phrase, e.g. minecraft" aria-label="Channel, tag or phrase to block" autocomplete="off" spellcheck="false" />
+          <button type="submit" class="button primary">Block</button>
+        </form>
+        <p class="small" id="yt-entry-kind" aria-live="polite"></p>
+        <ul class="rules simple" id="yt-entries"></ul>
+        <div class="tag-groups" id="yt-tags"></div>
+        <p class="error small" id="yt-groups-note" role="status"></p>
+
+        <h3 class="sub-title">Blocked videos on YouTube's pages</h3>
+        <div class="radio-row" role="radiogroup" aria-label="Blocked videos on YouTube's pages">
+          <label class="check"><input type="radio" name="yt-feed" value="cover" /> Cover the thumbnail and show what matched</label>
+          <label class="check"><input type="radio" name="yt-feed" value="hide" /> Remove them from the page</label>
+        </div>
+
+        <div class="add-row">
+          <label for="yt-mode" class="muted small">When something on YouTube is blocked:</label>
+          <select id="yt-mode">
+            <option value="wait">Wait, then continue</option>
+            <option value="block">Full block</option>
+          </select>
+          <span class="wait"><input id="yt-wait" class="seconds" type="number" min="3" max="600" aria-label="YouTube countdown in seconds" /> s</span>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="when-title">
+        <h2 class="panel-title" id="when-title"><span>when blocking is on</span></h2>
+        <p class="muted small">
+          Blocking turns on during focus and off on breaks. It follows, in this order: the <strong>Kairos app</strong> on
+          this PC, the <strong>Kairos phone app</strong> if you link it below, and the extension's own
+          <strong>focus timer</strong> in the toolbar popup (set focus and break lengths and rounds, then Start).
+        </p>
+        <p id="session" class="muted"></p>
+      </section>
+
+      <section class="panel" id="phone-panel" aria-labelledby="phone-title">
+        <h2 class="panel-title" id="phone-title"><span>link your phone</span></h2>
+        <p class="muted small">
+          No Kairos app on this PC? Blocking can follow focus on the Kairos app on your Android phone instead. The phone
+          and this PC must be on the same Wi-Fi. On the phone, open the menu, then <strong>Link a browser</strong>: it
+          shows an address and a 6-digit code.
+        </p>
+        <div id="phone-unlinked">
+          <div class="add-row pair-row">
+            <input id="pair-address" type="text" placeholder="Address, e.g. 192.168.1.23" aria-label="Phone address" autocomplete="off" spellcheck="false" />
+            <input id="pair-code" type="text" inputmode="numeric" maxlength="7" placeholder="Code" aria-label="6-digit code" autocomplete="off" />
+            <button type="button" class="button primary" id="pair">Link</button>
+          </div>
+          <p class="error small" id="pair-error" role="alert"></p>
+        </div>
+        <div id="phone-linked" hidden>
+          <p><strong id="phone-name"></strong> <span class="muted small" id="phone-state"></span></p>
+          <p class="actions"><button type="button" class="button" id="phone-unlink">Unlink</button></p>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="tabs-title">
+        <h2 class="panel-title" id="tabs-title"><span>tabs</span></h2>
+        <label class="check"><input type="checkbox" id="unload-on" /> Unload tabs unused for
+          <input id="unload-min" class="seconds" type="number" aria-label="Minutes before a tab is unloaded" /> min</label>
+        <p class="muted small">Saves memory. Click a tab to load it again. Pinned tabs and tabs playing sound stay.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="look-title">
+        <h2 class="panel-title" id="look-title"><span>look</span></h2>
+        <label class="field">Theme
+          <select id="theme">
+            <option value="glass">Glass</option>
+            <option value="terminal">Terminal</option>
+          </select>
+        </label>
+        <label class="field">Countdown for new "Wait" sites (seconds)
+          <input id="default-wait" class="seconds" type="number" min="3" max="600" />
+        </label>
+      </section>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

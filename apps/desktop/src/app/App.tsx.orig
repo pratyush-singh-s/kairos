@@ -1,0 +1,191 @@
+import { useEffect, useRef, useState } from "react";
+import { Sidebar } from "./Sidebar";
+import { TitleBar } from "./TitleBar";
+import { useUi } from "../theme/UiProvider";
+import { GlassLens } from "../features/timer/GlassLens";
+import { ROUTES, type RouteId } from "./routes";
+import { useScrollbarReveal } from "./useScrollbarReveal";
+import { useSidebarSwipe } from "./useSidebarSwipe";
+import { HistoryPage } from "../features/history/HistoryPage";
+import { DashboardPage } from "../features/dashboard/DashboardPage";
+import { SettingsPage } from "../features/settings/SettingsPage";
+import { DeadlinesPage } from "../features/deadlines/DeadlinesPage";
+import { NotesPage } from "../features/notes/NotesPage";
+import { CalendarPage } from "../features/calendar/CalendarPage";
+import { StatsPage } from "../features/stats/StatsPage";
+import { BlockingPage } from "../features/blocking/BlockingPage";
+import { SyncPage } from "../features/sync/SyncPage";
+import { TasksPage, openNoteFrom } from "../features/tasks/TasksPage";
+import { TimerHub, showTimerTab } from "../features/clock/ClockPage";
+import { UpcomingPage } from "../features/upcoming/UpcomingPage";
+import { CommandEcho, ShellPrompt, type ShellPromptHandle } from "./terminal/Prompt";
+import { KeyHints, StatusLine } from "./terminal/StatusLine";
+import { useTuiFrames } from "./terminal/useTuiFrames";
+import { TermNoise, TermWarpFilter, useTermGlitch } from "./terminal/TermNoise";
+import { useKeyboardNav } from "./useKeyboardNav";
+import { usePageEnter } from "./usePageEnter";
+import { useTypingSound } from "./useTypingSound";
+import { useCrtSound } from "./useCrtSound";
+import { CodePage } from "../features/code/CodePage";
+import type { CommandResult } from "./terminal/shell";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Splash } from "./Splash";
+import { useThemedIcon } from "./useThemedIcon";
+import { useCardGlow } from "./useCardGlow";
+
+export default function App() {
+  const [route, setRoute] = useState<RouteId>("dashboard");
+  const headingRef = useRef<HTMLDivElement>(null);
+
+  // Move keyboard focus to the new page so screen readers announce it.
+  useEffect(() => {
+    headingRef.current?.focus({ preventScroll: true });
+  }, [route]);
+
+  const current = ROUTES.find((r) => r.id === route) ?? ROUTES[0]!;
+  const { sidebarMode, titleBar, theme, terminalShell, terminalStyle, terminalGlow, miniGlass, update, glassPalette, terminalPalette, glassCustom, terminalCustom } = useUi();
+  useThemedIcon(JSON.stringify([theme, glassPalette, terminalPalette, glassCustom, terminalCustom]));
+  // True while the real-glass picture is drawing behind the window (styles.css turns the cards' own blur off then).
+  const [lensOn, setLensOn] = useState(false);
+  const terminal = theme === "terminal";
+  // Terminal style (Settings): which TUI parts each page gets. Classic has them all.
+  const style = terminal ? terminalStyle : null;
+  const boxes = style === "classic" || style === "app";
+  const colon = style === "app";
+  const echo = style === "classic" || style === "shell";
+  const tildes = style === "classic";
+  const statusLine = terminal && style !== "shell";
+  const glow = terminal ? terminalGlow ?? "soft" : "off";
+  useTermGlitch(glow);
+  const hints = style === "app" && route !== "code";
+  const promptRef = useRef<ShellPromptHandle>(null);
+  useTuiFrames(boxes);
+  useTypingSound();
+  useCrtSound();
+  useCardGlow(!terminal);
+  const sidebarCollapsed = sidebarMode === "hidden";
+  useScrollbarReveal();
+  // Sidebar hidden: pages use the whole window and the menu slides out on a swipe.
+  const peek = useSidebarSwipe(sidebarCollapsed);
+  const hoverTimer = useRef<number | undefined>(undefined);
+
+  function navigate(id: RouteId) {
+    setRoute(id);
+    peek.setOpen(false);
+  }
+  useKeyboardNav(theme, navigate);
+  const entering = usePageEnter(route);
+
+  // The Code page lives only in the Terminal theme.
+  useEffect(() => {
+    if (!terminal && route === "code") setRoute("dashboard");
+  }, [terminal, route]);
+
+  // Terminal theme: Ctrl+` jumps to the prompt, like the terminal in VS Code.
+  useEffect(() => {
+    if (!terminal) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.ctrlKey && e.code === "Backquote") {
+        e.preventDefault();
+        promptRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [terminal]);
+
+  // Full-screen app and Neovim: ":" opens the command line, unless you are typing somewhere.
+  useEffect(() => {
+    if (!colon) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== ":" || e.ctrlKey || e.altKey || e.metaKey || e.defaultPrevented || !promptRef.current) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.isContentEditable || el.closest(".cm-editor") || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement)) return;
+      if (el instanceof HTMLInputElement && !["checkbox", "radio", "range", "button", "color", "submit", "reset", "file"].includes(el.type)) return;
+      e.preventDefault();
+      promptRef.current?.focus();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [colon]);
+
+  function onCommand(r: CommandResult) {
+    if (r.kind === "open") {
+      // "stopwatch" and "countdown" open the Timer page on that tab.
+      if (r.word === "stopwatch" || r.word === "sw") showTimerTab("stopwatch");
+      else if (r.word === "countdown" || r.word === "alarm" || r.word === "clock") showTimerTab("countdown");
+      else if (r.route === "timer") showTimerTab("focus");
+      navigate(r.route);
+    }
+    else if (r.kind === "theme") update("theme", r.theme);
+    else if (r.kind === "exit") {
+      try {
+        void getCurrentWindow().close();
+      } catch {
+        // Not inside the app (browser preview).
+      }
+    }
+  }
+
+  return (
+    <div className="shell" data-sidebar={sidebarMode} data-titlebar={titleBar} data-status-line={statusLine || undefined} data-hints={hints || undefined} data-lens={(miniGlass === "lens" && !terminal && lensOn) || undefined}>
+      {miniGlass === "lens" && !terminal && (
+        <>
+          <GlassLens className="app-lens" scale={0.35} fps={20} fog={12} onActive={setLensOn} />
+          <div className="app-lens-tint" aria-hidden="true" />
+        </>
+      )}
+      {glow !== "off" && (
+        <>
+          <TermNoise level={glow} />
+          <TermWarpFilter />
+          <div className="term-roll" aria-hidden="true" />
+        </>
+      )}
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
+      <TitleBar title={current.label} command={route} />
+      <Splash />
+      {sidebarCollapsed && (
+        <div
+          className="sidebar-edge"
+          aria-hidden="true"
+          onMouseEnter={() => {
+            hoverTimer.current = window.setTimeout(() => peek.setOpen(true), 350);
+          }}
+          onMouseLeave={() => window.clearTimeout(hoverTimer.current)}
+        />
+      )}
+      {peek.open && <div className="sidebar-scrim" aria-hidden="true" onClick={() => peek.setOpen(false)} />}
+      <Sidebar current={route} onNavigate={navigate} peek={peek.open} onClose={() => peek.setOpen(false)} />
+      <main id="main" className="content">
+        <div ref={headingRef} key={route} tabIndex={-1} className="page-focus-target page-enter" data-entering={entering || undefined}>
+          {echo && route !== "code" && <CommandEcho shell={terminalShell} route={route} />}
+          {route === "dashboard" && <DashboardPage onNavigate={navigate} />}
+          {route === "timer" && <TimerHub />}
+          {route === "history" && <HistoryPage />}
+          {route === "tasks" && <TasksPage onOpenNote={(id) => openNoteFrom(id, navigate)} />}
+          {route === "deadlines" && <DeadlinesPage />}
+          {route === "notes" && <NotesPage />}
+          {route === "code" && terminal && <CodePage />}
+          {route === "calendar" && <CalendarPage onNavigate={navigate} />}
+          {route === "stats" && <StatsPage onNavigate={navigate} />}
+          {route === "blocking" && <BlockingPage />}
+          {route === "sync" && <SyncPage />}
+          {route === "settings" && <SettingsPage />}
+          {current.arrivesInPhase !== undefined && <UpcomingPage route={current} />}
+        </div>
+        {terminal && route !== "code" && <ShellPrompt ref={promptRef} shell={terminalShell} route={route} onResult={onCommand} colon={colon} />}
+        {tildes && route !== "code" && <div className="term-tildes" aria-hidden="true" />}
+      </main>
+      {hints && <KeyHints />}
+      {statusLine && (
+        <StatusLine
+          route={route}
+          onOpenTimer={() => { showTimerTab("focus"); navigate("timer"); }}
+        />
+      )}
+    </div>
+  );
+}

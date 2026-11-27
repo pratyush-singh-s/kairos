@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blocked</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="blocked-page">
+    <main class="panel blocked" aria-labelledby="title">
+      <p class="eyebrow"><span class="dot" aria-hidden="true"></span> Kairos Blocker</p>
+      <h1 id="title">Blocked</h1>
+      <p class="site" id="site"></p>
+      <p id="message" class="muted"></p>
+      <div class="countdown" aria-live="off">
+        <span class="count num" id="count"></span>
+        <span class="track" aria-hidden="true"><span class="fill" id="bar"></span></span>
+      </div>
+      <form class="reason" id="reason-form" hidden>
+        <label for="reason">Why are you here?</label>
+        <div class="reason-chips" id="reason-chips"></div>
+        <input id="reason" maxlength="120" autocomplete="off" placeholder="Or type your own reason" />
+      </form>
+      <p class="actions">
+        <button type="button" class="button primary" id="close">Go back</button>
+        <button type="button" class="button" id="continue" hidden>Continue to site</button>
+      </p>
+      <p class="muted small" id="left"></p>
+    </main>
+    <script src="blocked.js"></script>
+  </body>
+</html>

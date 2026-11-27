@@ -1,0 +1,317 @@
+mod app_block;
+mod attachments;
+mod bridge;
+mod code;
+mod commands;
+mod countdown;
+pub mod firewall;
+mod backup;
+mod capture;
+mod follow;
+mod glass_shot;
+mod glass_mag;
+mod planning;
+mod gcal;
+mod google;
+mod email_account;
+mod history;
+mod no_alt_menu;
+mod state;
+mod sound;
+mod sync;
+mod timer;
+mod tracking;
+mod tray;
+mod uptime;
+mod users;
+mod updates;
+mod autostart;
+mod incognito;
+mod winapps;
+
+use tauri::{Manager, WindowEvent};
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Writes any crash in the native core to %APPDATA%\com.focus.desktop\crash.log, so a crash
+/// can be sent in without having to catch it on screen.
+fn log_crashes() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if let Some(dir) = std::env::var_os("APPDATA").map(|d| std::path::PathBuf::from(d).join("com.focus.desktop")) {
+            let _ = std::fs::create_dir_all(&dir);
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("crash.log")) {
+                use std::io::Write;
+                let when = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                let thread = std::thread::current().name().unwrap_or("unnamed").to_string();
+                let _ = writeln!(f, "[{when}] {} {thread}: {info}\n{}\n", env!("CARGO_PKG_VERSION"), std::backtrace::Backtrace::force_capture());
+            }
+        }
+        previous(info);
+    }));
+}
+
+pub fn run() {
+    log_crashes();
+    tauri::Builder::default()
+        // Must be registered first: a second launch just brings the running Focus to the front.
+        // "Focus.exe --quit" (sent by the installer before an upgrade) closes the running copy.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if args.iter().any(|a| a == "--quit") {
+                app.exit(0);
+            } else {
+                tray::show_main_window(app);
+            }
+        }))
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(capture::plugin())
+        .setup(|app| {
+            // "--quit" with no Focus running: nothing to close, so don't start one.
+            if std::env::args().any(|a| a == "--quit") {
+                std::process::exit(0);
+            }
+            // Bring back a timer that was running when Focus last closed.
+            let store = state::open_store(app.handle());
+            let (timer, recording) = store
+                .with(|s| Ok(history::restore(s, timer::now_ms())))
+                .unwrap_or_else(|_| (focus_timer::Timer::new(), history::Recording::default()));
+            let resumed = timer.is_active();
+            // Raw app activity is kept for a year, for Statistics.
+            let _ = store.with(|s| focus_store::activity::prune(s, timer::now_ms() as i64, 366).map_err(|e| e.to_string()));
+            let _ = store.with(|s| focus_store::pc_time::prune(s, timer::now_ms() as i64, 366).map_err(|e| e.to_string()));
+            app.manage(store);
+            autostart::sync(app.handle());
+            // Started by Windows at sign-in: stay in the tray. Otherwise show the window
+            // (it starts hidden, see tauri.conf.json, so a tray start never flashes).
+            if !std::env::args().any(|a| a == autostart::HIDDEN_ARG)
+                && let Some(main) = app.get_webview_window("main")
+            {
+                let _ = main.show();
+                let _ = main.set_focus();
+            }
+            app.manage(timer::TimerState(std::sync::Mutex::new(timer)));
+            app.manage(history::RecordState(std::sync::Mutex::new(recording)));
+            app.manage(bridge::BridgeState::new());
+            app.manage(google::GoogleState::new());
+            app.manage(gcal::CalendarState::new());
+            app.manage(sync::SyncState::new());
+            app.manage(code::CodeState::new());
+            app.manage(updates::UpdateState::default());
+            app.manage(app_block::AppBlockState::new());
+            app.manage(follow::FollowState::default());
+            if let Some(main) = app.get_webview_window("main") {
+                no_alt_menu::install(&main);
+            }
+            tray::create(app.handle())?;
+            capture::register(app.handle());
+            timer::spawn_ticker(app.handle().clone());
+            app.manage(countdown::CountdownState::load(app.handle()));
+            countdown::spawn(app.handle().clone());
+            tracking::spawn(app.handle().clone());
+            uptime::spawn(app.handle().clone());
+            app_block::spawn(app.handle().clone());
+            bridge::publish_blocking(app.handle());
+            bridge::spawn(app.handle().clone());
+            incognito::spawn(app.handle().clone());
+            gcal::spawn(app.handle().clone());
+            sync::spawn(app.handle().clone());
+            users::spawn(app.handle().clone());
+            attachments::prune(app.handle());
+            if resumed {
+                timer::announce_resumed(app.handle());
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::Resized(size) = event
+                && window.label() == "mini"
+            {
+                commands::remember_mini_size(window, *size);
+            }
+            if let WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == "main"
+                && tray::close_to_tray_enabled(window.app_handle())
+            {
+                api.prevent_close();
+                tray::hide_to_tray(window.app_handle());
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            users::users_overview,
+            updates::update_check,
+            updates::update_install,
+            users::set_users_share,
+            users::users_info,
+            follow::get_schedules,
+            follow::save_schedules,
+            follow::goal_status,
+            follow::set_daily_goal,
+            follow::phone_focus_state,
+            follow::phone_timer_action,
+            capture::quick_capture,
+            backup::make_backup,
+            backup::restore_backup,
+            planning::get_day_plan,
+            planning::save_day_plan,
+            planning::set_review_hour,
+            commands::app_info,
+            commands::db_status,
+            commands::list_presets,
+            commands::load_dashboard,
+            commands::get_close_to_tray,
+            commands::set_close_to_tray,
+            autostart::get_start_with_windows,
+            autostart::set_start_with_windows,
+            incognito::get_private_windows,
+            incognito::set_private_windows,
+            commands::get_ui_settings,
+            commands::set_ui_setting,
+            commands::set_window_effect,
+            commands::glass_capture,
+            commands::glass_frame,
+            tray::get_recording_mode,
+            tray::set_recording_mode,
+            commands::create_preset,
+            commands::update_preset,
+            commands::delete_preset,
+            commands::last_preset_id,
+            commands::timer_state,
+            commands::timer_start,
+            commands::timer_pause,
+            commands::timer_resume,
+            commands::timer_skip,
+            commands::timer_stop,
+            commands::timer_continue,
+            commands::get_sound_settings,
+            commands::set_sound_settings,
+            commands::preview_sound,
+            countdown::countdown_get,
+            countdown::countdown_start,
+            countdown::countdown_cancel,
+            countdown::countdown_dismiss,
+            commands::open_mini_timer,
+            commands::close_mini_timer,
+            commands::show_main_window,
+            commands::quit_app,
+            commands::list_history,
+            commands::app_totals,
+            commands::delete_history_session,
+            commands::load_stats,
+            commands::deadline_focus_start,
+            commands::deadline_focus_stop,
+            commands::deadline_focus_state,
+            commands::weekly_review,
+            commands::get_blocking,
+            commands::save_blocking,
+            app_block::get_app_blocking,
+            app_block::save_app_blocking,
+            app_block::list_app_choices,
+            app_block::pick_app_exe,
+            app_block::app_block_current,
+            app_block::app_block_continue,
+            app_block::app_block_back,
+            commands::get_tracking_mode,
+            commands::set_tracking_mode,
+            commands::clear_activity,
+            commands::list_tasks,
+            commands::create_task,
+            commands::update_task,
+            commands::set_task_done,
+            commands::delete_tasks,
+            commands::restore_tasks,
+            commands::clear_done_tasks,
+            commands::set_task_color,
+            commands::recent_task_colors,
+            commands::list_spaces,
+            commands::create_space,
+            commands::update_space,
+            commands::delete_space,
+            commands::restore_space,
+            commands::list_board_items,
+            commands::save_board_items,
+            commands::delete_board_items,
+            commands::restore_board_items,
+            commands::list_notes,
+            commands::get_note,
+            commands::create_note,
+            commands::save_note,
+            commands::set_note_pinned,
+            commands::list_note_folders,
+            commands::add_note_folder,
+            commands::set_note_folder,
+            commands::move_note_folder,
+            commands::remove_note_folder,
+            commands::delete_notes,
+            commands::restore_notes,
+            attachments::list_note_attachments,
+            attachments::attach_files,
+            attachments::open_attachment,
+            attachments::save_attachment,
+            attachments::save_export,
+            commands::set_app_icon,
+            attachments::remove_attachment,
+            attachments::restore_attachment,
+            commands::list_deadlines,
+            commands::create_deadline,
+            commands::update_deadline,
+            commands::set_deadline_completed,
+            commands::mark_deadline_day,
+            commands::delete_deadlines,
+            commands::restore_deadlines,
+            bridge::browser_link_status,
+            google::google_status,
+            email_account::account_status,
+            email_account::account_sign_up,
+            email_account::account_sign_in,
+            email_account::account_check_verified,
+            email_account::account_resend_verification,
+            email_account::account_reset_password,
+            email_account::account_sign_out,
+            google::save_google_client,
+            google::google_sign_in,
+            google::google_cancel_sign_in,
+            google::google_sign_out,
+            google::google_connect_calendar,
+            gcal::calendar_status,
+            gcal::list_calendars,
+            gcal::set_calendar_shown,
+            gcal::set_calendar_push,
+            gcal::set_calendar_auto,
+            gcal::calendar_sync_now,
+            gcal::list_calendar_events,
+            gcal::save_calendar_event,
+            gcal::delete_calendar_event,
+            sync::sync_status,
+            sync::sync_show_code,
+            sync::sync_cancel_code,
+            sync::sync_pair,
+            sync::sync_now,
+            sync::sync_forget,
+            sync::sync_set_name,
+            sync::sync_account_check,
+            sync::sync_account_allow,
+            firewall::sync_firewall_allowed,
+            firewall::sync_allow_firewall,
+            code::code_folder,
+            code::code_list,
+            code::code_read,
+            code::code_save,
+            code::code_delete,
+            code::code_rename,
+            code::code_toolchains,
+            code::code_run,
+            code::code_stdin,
+            code::code_close_stdin,
+            code::code_stop,
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while running Kairos")
+        .run(|app, event| {
+            // Programs started on the Code page end with Focus.
+            if let tauri::RunEvent::Exit = event {
+                code::stop_all(app);
+                incognito::on_exit(app);
+            }
+        });
+}

@@ -1,0 +1,555 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { timeOfDay } from "@focus/core";
+import { formatDurationShort, isoDate, localDay } from "@focus/core";
+import { Card } from "../../components/Card";
+import {
+  deleteHistorySession,
+  listHistory,
+  useHistoryChanged,
+  type SessionRow,
+} from "../../ipc/history";
+import { useUi } from "../../theme/UiProvider";
+import { HistoryPie } from "./HistoryPie";
+import { Num } from "../../components/Num";
+
+const timeFormat = { format: timeOfDay };
+const dayFormat = new Intl.DateTimeFormat(undefined, {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+});
+const weekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long" });
+const monthYearFormat = new Intl.DateTimeFormat(undefined, {
+  month: "long",
+  year: "numeric",
+});
+/** Which days and months are folded (per PC, only a convenience). */
+const FOLD_KEY = "kairos.history.folded";
+
+type Folded = { days: string[]; months: string[] };
+
+function readFolded(): Folded {
+  try {
+    const v = JSON.parse(
+      localStorage.getItem(FOLD_KEY) ?? "null",
+    ) as Partial<Folded> | null;
+    return {
+      days: Array.isArray(v?.days) ? v.days : [],
+      months: Array.isArray(v?.months) ? v.months : [],
+    };
+  } catch {
+    return { days: [], months: [] };
+  }
+}
+
+const PHASE_NAME: Record<SessionRow["phase"], string> = {
+  focus: "Focus",
+  short_break: "Short break",
+  long_break: "Long break",
+};
+
+type Load =
+  | { kind: "loading" }
+  | { kind: "ready"; rows: SessionRow[] }
+  | { kind: "error"; message: string };
+
+/** Start of the local day `daysAgo` days before today (handles clock changes). */
+function dayStart(daysAgo: number): number {
+  const now = new Date();
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - daysAgo,
+  ).getTime();
+}
+
+/** Seconds of focus a row counts for (running rows count nothing yet). */
+const focusSeconds = (r: SessionRow) =>
+  r.phase === "focus" ? (r.actualS ?? 0) : 0;
+
+export function HistoryPage() {
+  const { theme } = useUi();
+  const [days, setDays] = useState(14);
+  const [showBreaks, setShowBreaks] = useState(false);
+  const [state, setState] = useState<Load>({ kind: "loading" });
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [folded, setFolded] = useState<Folded>(readFolded);
+  useEffect(() => {
+    try {
+      localStorage.setItem(FOLD_KEY, JSON.stringify(folded));
+    } catch {
+      // Folding still works for this visit.
+    }
+  }, [folded]);
+  const toggleDay = (key: string) =>
+    setFolded((f) => ({
+      ...f,
+      days: f.days.includes(key)
+        ? f.days.filter((d) => d !== key)
+        : [...f.days, key],
+    }));
+  /** Folds every day of the month into one line; unfolding opens all of them again. */
+  const toggleMonth = (month: string) =>
+    setFolded((f) =>
+      f.months.includes(month)
+        ? {
+            days: f.days.filter((d) => !d.startsWith(month)),
+            months: f.months.filter((m) => m !== month),
+          }
+        : { ...f, months: [...f.months, month] },
+    );
+
+  const reload = useCallback(() => {
+    // Always load at least the last 7 days for the week chart.
+    listHistory(
+      dayStart(Math.max(days, 7) - 1),
+      localDay(new Date()).endMs,
+      true,
+    )
+      .then((rows) => setState({ kind: "ready", rows }))
+      .catch((err: unknown) =>
+        setState({ kind: "error", message: String(err) }),
+      );
+  }, [days]);
+
+  useEffect(reload, [reload]);
+  useHistoryChanged(reload);
+  useHistoryChanged(reload, "activity-changed");
+  // A running session shows its live state; refresh once a minute and when the window comes back.
+  useEffect(() => {
+    const t = window.setInterval(reload, 60_000);
+    window.addEventListener("focus", reload);
+    return () => {
+      window.clearInterval(t);
+      window.removeEventListener("focus", reload);
+    };
+  }, [reload]);
+
+  const rows = state.kind === "ready" ? state.rows : [];
+  const week = useMemo(() => weekBars(rows), [rows]);
+  const groups = useMemo(
+    () =>
+      byDay(
+        rows.filter((r) => showBreaks || r.phase === "focus"),
+        days,
+      ),
+    [rows, showBreaks, days],
+  );
+  const items = useMemo(
+    () => withFoldedMonths(groups, folded.months),
+    [groups, folded.months],
+  );
+
+  async function remove(id: string) {
+    setActionError(null);
+    try {
+      await deleteHistorySession(id);
+      setConfirmId(null);
+      reload();
+    } catch (err) {
+      setActionError(String(err));
+    }
+  }
+
+  const today = week[week.length - 1]!;
+  const weekTotal = week.reduce((n, d) => n + d.seconds, 0);
+  const weekSessions = week.reduce((n, d) => n + d.completed, 0);
+  const max = Math.max(...week.map((d) => d.seconds), 1);
+
+  return (
+    <section aria-labelledby="history-title">
+      <h1 id="history-title" className="page-title">
+        History
+      </h1>
+
+      {state.kind === "error" && (
+        <div className="card notice error-notice" role="alert">
+          <p>
+            <strong>Could not load your history.</strong> {state.message}
+          </p>
+          <button type="button" className="button" onClick={reload}>
+            Try again
+          </button>
+        </div>
+      )}
+
+      <div className="dashboard-grid">
+        <Card title="Today">
+          <p className="big-number"><Num>{formatDurationShort(today.seconds)}</Num></p>
+          <p className="muted">
+            {plural(today.completed, "session")} completed
+          </p>
+        </Card>
+        <Card title="Last 7 days">
+          <p className="big-number"><Num>{formatDurationShort(weekTotal)}</Num></p>
+          <p className="muted">
+            {plural(weekSessions, "session")} ·{" "}
+            {formatDurationShort(Math.round(weekTotal / 7 / 60) * 60)} a day on
+            average
+          </p>
+        </Card>
+        <Card title="This week" className="span-2">
+          <ol
+            className="week-bars"
+            aria-label="Focus time for each of the last 7 days"
+          >
+            {week.map((d) => (
+              <li
+                key={d.key}
+                aria-label={`${d.label}: ${formatDurationShort(d.seconds)}`}
+              >
+                <span className="bar-value num">
+                  {d.seconds > 0 ? shortHours(d.seconds) : ""}
+                </span>
+                <span
+                  className="bar"
+                  style={{ height: `${Math.round((d.seconds / max) * 100)}%` }}
+                  data-today={d.isToday}
+                />
+                <span className="bar-label">
+                  {theme === "terminal" ? d.label.toLowerCase() : d.label}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </Card>
+      </div>
+
+      <div className="history-toolbar">
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={showBreaks}
+            onChange={(e) => setShowBreaks(e.target.checked)}
+          />{" "}
+          Show breaks
+        </label>
+      </div>
+      {actionError && (
+        <p className="error" role="alert">
+          {actionError}
+        </p>
+      )}
+
+      {state.kind === "loading" && <p className="muted">Loading…</p>}
+      {state.kind === "ready" && groups.length === 0 && (
+        <div className="card empty">
+          <p>No focus sessions in the last {days} days.</p>
+          <p className="muted">Start one on the Timer page.</p>
+        </div>
+      )}
+
+      {items.map((item) =>
+        item.kind === "month" ? (
+          <section
+            key={`m-${item.month}`}
+            className="card history-day"
+            data-folded
+            aria-label={item.title}
+          >
+            <h2 className="history-day-title">
+              <span>
+                <button
+                  type="button"
+                  className="history-fold"
+                  aria-expanded={false}
+                  title="Show every day"
+                  onClick={() => toggleMonth(item.month)}
+                >
+                  {item.title}
+                </button>
+                <span className="muted small history-fold-note">
+                  {" "}
+                  · {plural(item.days, "day")} ·{" "}
+                  {plural(item.sessions, "session")}
+                </span>
+              </span>
+              <span className="num">{formatDurationShort(item.seconds)}</span>
+            </h2>
+          </section>
+        ) : (
+          <section
+            key={item.g.key}
+            className="card history-day"
+            data-folded={folded.days.includes(item.g.key) || undefined}
+            aria-label={item.g.title}
+          >
+            <h2 className="history-day-title">
+              <span>
+                <DayTitle
+                  g={item.g}
+                  folded={folded.days.includes(item.g.key)}
+                  onDay={() => toggleDay(item.g.key)}
+                  onMonth={() => toggleMonth(item.g.key.slice(0, 7))}
+                />
+                {folded.days.includes(item.g.key) && (
+                  <span className="muted small history-fold-note">
+                    {" "}
+                    · {plural(item.g.rows.length, "session")}
+                  </span>
+                )}
+              </span>
+              <span className="num">{formatDurationShort(item.g.seconds)}</span>
+            </h2>
+            {!folded.days.includes(item.g.key) && (
+              <div className="history-day-body">
+                <ul className="list history-list">
+                  {item.g.rows.map((r) => (
+                    <li key={r.id} data-phase={r.phase}>
+                      <span className="history-time num">
+                        {timeFormat.format(r.startedAt)}–
+                        {r.endedAt ? timeFormat.format(r.endedAt) : "now"}
+                      </span>
+                      <span className="history-what">
+                        <strong>
+                          {r.endedAt
+                            ? formatDurationShort(r.actualS ?? 0)
+                            : "In progress"}
+                        </strong>{" "}
+                        {PHASE_NAME[r.phase].toLowerCase()}
+                        <span className="muted small">
+                          {" "}
+                          · {r.presetName ?? "Deleted preset"} · session{" "}
+                          {r.sessionNumber}
+                          {r.pausedS >= 60
+                            ? ` · paused ${formatDurationShort(r.pausedS)}`
+                            : ""}
+                        </span>
+                      </span>
+                      {r.apps.length > 0 && (
+                        <span className="history-apps muted small">
+                          {r.apps
+                            .map(
+                              (a) =>
+                                `${a.name} ${formatDurationShort(a.seconds)}`,
+                            )
+                            .join(" · ")}
+                        </span>
+                      )}
+                      <Outcome row={r} />
+                      {r.endedAt !== null &&
+                        (confirmId === r.id ? (
+                          <span className="history-confirm">
+                            <button
+                              type="button"
+                              className="button danger small-button"
+                              onClick={() => void remove(r.id)}
+                            >
+                              Delete
+                            </button>
+                            <button
+                              type="button"
+                              className="button small-button"
+                              onClick={() => setConfirmId(null)}
+                            >
+                              Keep
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="icon-button history-delete"
+                            aria-label={`Delete the ${PHASE_NAME[r.phase].toLowerCase()} at ${timeFormat.format(r.startedAt)}`}
+                            title="Delete from history"
+                            onClick={() => setConfirmId(r.id)}
+                          >
+                            <svg viewBox="0 0 16 16" aria-hidden="true">
+                              <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />
+                            </svg>
+                          </button>
+                        ))}
+                    </li>
+                  ))}
+                </ul>
+                <HistoryPie day={item.g.key} />
+              </div>
+            )}
+          </section>
+        ),
+      )}
+
+      {state.kind === "ready" && (
+        <p>
+          <button
+            type="button"
+            className="button"
+            onClick={() => setDays((d) => d + 30)}
+          >
+            Show older
+          </button>{" "}
+          <span className="muted small">Showing the last {days} days</span>
+        </p>
+      )}
+    </section>
+  );
+}
+
+function Outcome(props: { row: SessionRow }) {
+  const r = props.row;
+  const [word, tone] =
+    r.endedAt === null
+      ? ["Running", "running"]
+      : r.outcome === "completed"
+        ? ["Completed", "ok"]
+        : r.outcome === "interrupted"
+          ? ["Stopped early", "failed"]
+          : ["Skipped", "neutral"];
+  return <span className={`pill history-outcome outcome-${tone}`}>{word}</span>;
+}
+
+interface DayBar {
+  key: string;
+  label: string;
+  isToday: boolean;
+  seconds: number;
+  completed: number;
+}
+
+/** Focus time for each of the last 7 local days, oldest first. */
+function weekBars(rows: SessionRow[]): DayBar[] {
+  const bars: DayBar[] = [];
+  for (let ago = 6; ago >= 0; ago--) {
+    const start = dayStart(ago);
+    const end = dayStart(ago - 1);
+    const inDay = rows.filter((r) => r.startedAt >= start && r.startedAt < end);
+    bars.push({
+      key: isoDate(new Date(start)),
+      label: ago === 0 ? "Today" : weekdayFormat.format(start),
+      isToday: ago === 0,
+      seconds: inDay.reduce((n, r) => n + focusSeconds(r), 0),
+      completed: inDay.filter(
+        (r) => r.phase === "focus" && r.outcome === "completed",
+      ).length,
+    });
+  }
+  return bars;
+}
+
+interface DayGroup {
+  key: string;
+  title: string;
+  seconds: number;
+  rows: SessionRow[];
+}
+
+/** Rows (newest first) grouped by local day, limited to the last `days` days. */
+function byDay(rows: SessionRow[], days: number): DayGroup[] {
+  const groups: DayGroup[] = [];
+  const oldest = dayStart(days - 1);
+  for (const r of rows) {
+    if (r.startedAt < oldest) continue;
+    const key = isoDate(new Date(r.startedAt));
+    let g = groups[groups.length - 1];
+    if (!g || g.key !== key) {
+      g = { key, title: dayTitle(r.startedAt), seconds: 0, rows: [] };
+      groups.push(g);
+    }
+    g.rows.push(r);
+    g.seconds += focusSeconds(r);
+  }
+  return groups;
+}
+
+type Item =
+  | { kind: "day"; g: DayGroup }
+  | {
+      kind: "month";
+      month: string;
+      title: string;
+      seconds: number;
+      days: number;
+      sessions: number;
+    };
+
+/** Days of a folded month become one line. */
+function withFoldedMonths(groups: DayGroup[], months: string[]): Item[] {
+  const out: Item[] = [];
+  for (const g of groups) {
+    const month = g.key.slice(0, 7);
+    if (!months.includes(month)) {
+      out.push({ kind: "day", g });
+      continue;
+    }
+    const last = out[out.length - 1];
+    if (last?.kind === "month" && last.month === month) {
+      last.seconds += g.seconds;
+      last.days += 1;
+      last.sessions += g.rows.length;
+    } else {
+      const first = g.rows[0]?.startedAt ?? Date.now();
+      const sameYear =
+        new Date(first).getFullYear() === new Date().getFullYear();
+      out.push({
+        kind: "month",
+        month,
+        title: (sameYear ? monthFormat : monthYearFormat).format(first),
+        seconds: g.seconds,
+        days: 1,
+        sessions: g.rows.length,
+      });
+    }
+  }
+  return out;
+}
+
+/** "Wednesday, 18 November": the weekday folds the day, the month folds the whole month. */
+function DayTitle(props: {
+  g: DayGroup;
+  folded: boolean;
+  onDay: () => void;
+  onMonth: () => void;
+}) {
+  const { g } = props;
+  const day = (text: string) => (
+    <button
+      type="button"
+      className="history-fold"
+      aria-expanded={!props.folded}
+      title={props.folded ? "Show this day" : "Fold this day"}
+      onClick={props.onDay}
+    >
+      {text}
+    </button>
+  );
+  if (g.title === "Today" || g.title === "Yesterday") return day(g.title);
+  const ms = g.rows[0]?.startedAt ?? Date.now();
+  return (
+    <>
+      {dayFormat.formatToParts(ms).map((p, i) =>
+        p.type === "weekday" ? (
+          <span key={i}>{day(p.value)}</span>
+        ) : p.type === "month" ? (
+          <button
+            key={i}
+            type="button"
+            className="history-fold"
+            title="Fold the whole month"
+            onClick={props.onMonth}
+          >
+            {p.value}
+          </button>
+        ) : (
+          <span key={i}>{p.value}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+function dayTitle(ms: number): string {
+  if (ms >= dayStart(0)) return "Today";
+  if (ms >= dayStart(1)) return "Yesterday";
+  return dayFormat.format(ms);
+}
+
+function plural(n: number, word: string) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+/** "2.5h" or "40m" for the small labels above the bars. */
+function shortHours(seconds: number): string {
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  return `${(seconds / 3600).toFixed(seconds < 36000 ? 1 : 0).replace(/\.0$/, "")}h`;
+}

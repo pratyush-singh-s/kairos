@@ -1,0 +1,41 @@
+rules_version = '2';
+// Kairos users database (apps/desktop/src-tauri/src/users.rs).
+// Apps may only ADD an install / refresh its "last opened", and only write their OWN sign-in.
+// Only the owner's Google account can read anything. Replace the email below with yours.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == "YOUR_EMAIL@gmail.com";
+    }
+    function shortText(v, n) { return v is string && v.size() <= n; }
+
+    match /installs/{id} {
+      allow read: if isOwner();
+      allow create: if id.size() == 32
+        && request.resource.data.keys().hasOnly(['firstSeen', 'lastSeen', 'version', 'os'])
+        && request.resource.data.firstSeen is timestamp
+        && request.resource.data.lastSeen is timestamp
+        && shortText(request.resource.data.version, 20)
+        && shortText(request.resource.data.os, 20);
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeen', 'version'])
+        && request.resource.data.lastSeen is timestamp
+        && shortText(request.resource.data.version, 20);
+    }
+
+    match /signins/{email} {
+      allow read: if isOwner();
+      allow create, update: if request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() == email
+        && request.resource.data.keys().hasOnly(['email', 'name', 'firstSeen', 'lastSeen', 'installId', 'version'])
+        && request.resource.data.email == email
+        && shortText(request.resource.data.name, 100)
+        && shortText(request.resource.data.installId, 40)
+        && shortText(request.resource.data.version, 20)
+        && request.resource.data.lastSeen is timestamp
+        && (resource == null || request.resource.data.firstSeen == resource.data.firstSeen);
+    }
+  }
+}

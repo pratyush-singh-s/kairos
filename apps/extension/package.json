@@ -1,0 +1,22 @@
+{
+  "name": "@focus/extension",
+  "private": true,
+  "version": "0.15.5",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "web-ext lint --source-dir dist",
+    "start": "web-ext run --source-dir dist",
+    "package": "web-ext build --source-dir dist --overwrite-dest"
+  },
+  "devDependencies": {
+    "@types/firefox-webext-browser": "^143.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "~6.0.3",
+    "web-ext": "^10.0.0"
+  },
+  "dependencies": {
+    "@focus/core": "workspace:*"
+  }
+}

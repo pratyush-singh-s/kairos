@@ -1,0 +1,20 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>No</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
+  body { display: grid; place-items: center; }
+  /* 3 frames of 32x32 on a 64x64 sheet, drawn 5x with hard pixels. */
+  #hand { width: 160px; height: 160px; background: url("no-sprite.png") 0 0 / 320px 320px no-repeat; image-rendering: pixelated;
+          filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 1px #fff) drop-shadow(0 4px 10px rgba(0,0,0,.45)); }
+  /* On a dark page: white hand with a dark halo. */
+  html.dark #hand { filter: invert(1) drop-shadow(0 0 2px #000) drop-shadow(0 0 1px #000) drop-shadow(0 4px 10px rgba(0,0,0,.6)); }
+</style>
+</head>
+<body>
+<div id="hand" role="img" aria-label="No private windows"></div>
+<script src="no.js"></script>
+</body>
+</html>

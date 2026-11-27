@@ -1,0 +1,17 @@
+{
+  "name": "focus",
+  "private": true,
+  "version": "0.12.0",
+  "description": "Focus: personal focus timer, planner and distraction blocker for Windows + Firefox",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @focus/desktop tauri dev",
+    "build:desktop": "pnpm --filter @focus/desktop tauri build",
+    "build:extension": "pnpm --filter @focus/extension build",
+    "test": "pnpm -r --if-present test && cargo test --manifest-path crates/focus-store/Cargo.toml && cargo test --manifest-path crates/focus-timer/Cargo.toml && cargo test --manifest-path crates/focus-sync/Cargo.toml",
+    "typecheck": "pnpm -r --if-present typecheck"
+  }
+}
